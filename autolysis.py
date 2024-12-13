@@ -24,14 +24,13 @@ from sklearn.cluster import DBSCAN
 from sklearn.svm import OneClassSVM
 from sklearn.impute import SimpleImputer
 from tabulate import tabulate
+from PIL import Image
 
-# Fetch AIPROXY_TOKEN from environment variables
 aiproxy_token = os.environ.get("AIPROXY_TOKEN")
 if not aiproxy_token:
     print("Error: AIPROXY_TOKEN is not set. Please provide the token.")
     sys.exit(1)
 
-# Configure OpenAI to use AI Proxy
 openai.api_base = "https://aiproxy.sanand.workers.dev/openai/v1"
 openai.api_key = aiproxy_token
 
@@ -41,10 +40,8 @@ if len(sys.argv) != 2:
 
 filename = sys.argv[1]
 
-# List of common encodings to try
 ENCODINGS_TO_TRY = ['utf-8', 'ISO-8859-1', 'latin1', 'utf-16', 'cp1252', 'windows-1252']
 
-# Load dataset with encoding handling
 def load_dataset(filename):
     for encoding in ENCODINGS_TO_TRY:
         try:
@@ -67,15 +64,9 @@ def load_dataset(filename):
     print(f"Error: Could not read the file {filename} with any of the tried encodings.")
     sys.exit(1)
 
-# Data Exploration: Overview of the dataset
 def explore_data(data):
-    print(f"Loaded data from {filename} with {data.shape[0]} rows and {data.shape[1]} columns.")
-    print("Column names:", data.columns)
-    print("Data types:", data.dtypes)
-    print("Summary statistics:\n", data.describe())
     return data.describe(include='all')
 
-# Generate Correlation Matrix and Heatmap (only for numeric columns)
 def generate_correlation_matrix(data):
     numeric_data = data.select_dtypes(include=[np.number])
     if numeric_data.empty:
@@ -89,36 +80,33 @@ def generate_correlation_matrix(data):
     plt.close()
     print("Saved correlation heatmap as 'correlation_matrix.png'")
 
-# Generate Histograms for selected numeric columns
-def generate_histograms(data):
+def generate_histograms(data, column='average_rating'):
     numeric_data = data.select_dtypes(include=[np.number])
-    selected_columns = ['average_rating', 'ratings_count', 'work_ratings_count', 'work_text_reviews_count']  # Reduced to relevant columns
-    for column in selected_columns:
-        if column in numeric_data.columns:
-            plt.figure(figsize=(8, 6))
-            sns.histplot(numeric_data[column], kde=True, color='blue')
-            plt.title(f"Histogram of {column}")
-            plt.xlabel(column)
-            plt.ylabel("Frequency")
-            plt.savefig(f"histogram_{column}.png")
-            plt.close()
-            print(f"Histogram saved as 'histogram_{column}.png'")
+    if column in numeric_data.columns:
+        plt.figure(figsize=(8, 6))
+        sns.histplot(numeric_data[column], kde=True, color='blue')
+        plt.title(f"Histogram of {column}")
+        plt.xlabel(column)
+        plt.ylabel("Frequency")
+        plt.savefig(f"histogram.png")
+        plt.close()
+        print(f"Histogram saved as 'histogram.png'")
+    else:
+        print(f"Column '{column}' not found in the dataset.")
 
-# Generate Boxplots for selected numeric columns
-def generate_box_plots(data):
+def generate_boxplot(data, column='average_rating'):
     numeric_data = data.select_dtypes(include=[np.number])
-    selected_columns = ['average_rating', 'ratings_count', 'work_ratings_count', 'work_text_reviews_count']  # Reduced to relevant columns
-    for column in selected_columns:
-        if column in numeric_data.columns:
-            plt.figure(figsize=(8, 6))
-            sns.boxplot(x=numeric_data[column], color='red')
-            plt.title(f"Boxplot of {column}")
-            plt.xlabel(column)
-            plt.savefig(f"boxplot_{column}.png")
-            plt.close()
-            print(f"Boxplot saved as 'boxplot_{column}.png'")
+    if column in numeric_data.columns:
+        plt.figure(figsize=(8, 6))
+        sns.boxplot(x=numeric_data[column], color='red')
+        plt.title(f"Boxplot of {column}")
+        plt.xlabel(column)
+        plt.savefig(f"boxplot.png")
+        plt.close()
+        print(f"Boxplot saved as 'boxplot.png'")
+    else:
+        print(f"Column '{column}' not found in the dataset.")
 
-# Anomaly Detection using Isolation Forest
 def anomaly_detection(data):
     numeric_data = data.select_dtypes(include=[np.number])
     imputer = SimpleImputer(strategy='median')
@@ -126,10 +114,8 @@ def anomaly_detection(data):
     iso_forest = IsolationForest(contamination=0.05)
     anomalies = iso_forest.fit_predict(numeric_data_imputed)
     data['Anomaly'] = anomalies
-    print(f"Anomalies detected: {sum(anomalies == -1)}")
     return data
 
-# Anomaly Detection using DBSCAN
 def dbscan_anomaly_detection(data):
     numeric_data = data.select_dtypes(include=[np.number])
     imputer = SimpleImputer(strategy='median')
@@ -137,10 +123,8 @@ def dbscan_anomaly_detection(data):
     dbscan = DBSCAN(eps=0.5, min_samples=5)
     labels = dbscan.fit_predict(numeric_data_imputed)
     data['DBSCAN_Anomaly'] = labels
-    print(f"DBSCAN Anomalies detected: {sum(labels == -1)}")
     return data
 
-# Anomaly Detection using One-Class SVM
 def one_class_svm_anomaly_detection(data):
     numeric_data = data.select_dtypes(include=[np.number])
     imputer = SimpleImputer(strategy='median')
@@ -148,120 +132,194 @@ def one_class_svm_anomaly_detection(data):
     svm = OneClassSVM(kernel='rbf', nu=0.05, gamma='scale')
     labels = svm.fit_predict(numeric_data_imputed)
     data['SVM_Anomaly'] = labels
-    print(f"One-Class SVM Anomalies detected: {sum(labels == -1)}")
     return data
 
-def analyze_data_with_llm(data_summary):
-    prompt = f"""
-    You are an expert data analyst, and your task is to analyze the provided dataset summary thoroughly.
-
-    Please provide a comprehensive analysis with the following aspects:
-
-    1. **Correlations**: Identify any notable correlations between features. Are there any strong correlations between numeric or categorical variables? Provide the top correlations and explain their significance.
-
-    2. **Feature Distribution and Descriptive Statistics**: For numeric features, summarize their distribution. What are the mean, median, standard deviation, and range for important numerical features? Are there any skewed distributions or outliers?
-
-    3. **Outliers**: Identify any potential outliers in the dataset. Which data points have extreme values for numeric features? Explain why these outliers might exist (e.g., data entry errors, rare cases, etc.).
-
-    4. **Missing Data**: Provide a detailed analysis of missing data. Which columns have the most missing values, and are there any patterns to these missing values? Could missing data impact the analysis or suggest areas to investigate further?
-
-    5. **Categorical Data Insights**: Explore the distribution of categorical variables (e.g., categories, classes, labels). Are there any categories that are overrepresented or underrepresented in the data? How do they affect other features or target variables?
-
-    6. **Feature Interactions**: Investigate if there are any interactions between features that influence the target variable or other features. For example, how do combinations of features (e.g., two categorical variables or numeric and categorical) affect the distribution of key metrics?
-
-    7. **Trends Over Time**: If time-related features are available, analyze how key variables evolve over time. Are there any noticeable trends, seasonality, or time-dependent patterns that emerge in the dataset?
-
-    8. **General Observations**: Provide any additional insights or observations that might be relevant. Are there any features that stand out as particularly impactful or interesting in terms of predicting the target variable or understanding the data?
-
-    9. **Recommendations**: Based on your analysis, suggest any improvements to the dataset or methodology. Could adding, removing, or transforming features enhance the analysis? Are there any data quality issues that need to be addressed, such as imputation for missing values or handling outliers?
-
-    Here is the data summary for your analysis:
-    {data_summary}
-
-    Please provide as much detail as possible in your analysis, including any actionable insights that could guide future steps or inform decisions based on the data.
-    """
-    
+def gpt_api_call(prompt):
     try:
         response = openai.ChatCompletion.create(
             model="gpt-4o-mini", 
             messages=[{"role": "user", "content": prompt}],
         )
         return response['choices'][0]['message']['content']
-    except Exception as e: 
-        print(f"Error during LLM analysis: {e}")
-        return "LLM analysis failed due to an error."
+    except Exception as e:
+        print(f"Error during GPT API call: {e}")
+        return "GPT API call failed due to an error."
+
+def analyze_data_with_llm(data, filename="data.csv"):
+
+    data_info = data.info()
+    data_summary = data.describe(include='all') 
+    numeric_data = data.select_dtypes(include=[np.number])
+    if numeric_data.empty:
+        print("No numeric columns available for correlation.")
+    else:
+        corr_matrix = numeric_data.corr()
     
-def write_narrative(analysis_results, charts, data, filename="data.csv"):
+    starting_prompt = f"""
+    Here is the dataset information and summary:
+    {data_info}
+    This dataset contains {data.shape[0]} rows and {data.shape[1]} columns. 
+    The data types of the columns are as follows:
+    {data.dtypes}
+    The dataset includes the following numerical and categorical columns, with key statistics (mean, min, max, std, etc.):
+    {data_summary}
+    Missing data information:
+    {data.isnull().sum()}"""
+
+    data_info_prompt = f"""
+    {starting_prompt}
+    Please analyze the dataset based on the following detailed information and write me a short introduction paragraph for my
+    data analysis report in few lines.
+    """
+    data_info_details = gpt_api_call(data_info_prompt)
+
+    file_details_prompt = f"""
+    {starting_prompt}
+    Please provide a concise summary of the dataset's dimensions. This file has {data.shape[0]} rows and {data.shape[1]} columns.
+    File: {filename}
+    write in points
+    """
+    file_details = gpt_api_call(file_details_prompt)
+
+    analysis_results_prompt = f"""
+    {starting_prompt}
+    Provide a comprehensive analysis of the dataset, focusing on the following aspects:
+    - Correlations between numeric and categorical variables for this you can take a look at {corr_matrix}
+    - Feature distributions for numerical data (mean, std, range).
+    - Identification of outliers or extreme values.
+    - Trends in missing data or categorical distributions.
+    - Any general observations you find interesting based on the data summary provided above.
+    Please write in points in professional way.
+    """
+    analysis_results = gpt_api_call(analysis_results_prompt)
+
+    recommendations_prompt = f"""
+    {starting_prompt}
+    Please suggest recommendations on this dataset.
+    """
+    recommendations = gpt_api_call(recommendations_prompt)
+
+    return {
+        'data_info_details': data_info_details,
+        'file_details': file_details,
+        'analysis_results': analysis_results,
+        'recommendations': recommendations,
+    }
+
+def safe_get(data, key, default="N/A"):
+    if isinstance(data, dict):
+        return data.get(key, default)
+    elif isinstance(data, str):
+        return data if key in data else default
+    return default
+
+def generate_readme(dataset_name, analysis_results, data):
+
+    data_info_details = analysis_results.get('data_info_details', "N/A")
+    file_details = analysis_results.get('file_details', "N/A")
+    recommendations = analysis_results.get('recommendations', "N/A")
+
+    missing_values_summary = data.isnull().sum().reset_index()
+    missing_values_summary.columns = ['Column Name', 'Missing Values']
+    missing_values_table = tabulate(missing_values_summary, headers='keys', tablefmt='pipe', showindex=False)
+
+    anomaly_data = anomaly_detection(data.copy())
+    dbscan_data = dbscan_anomaly_detection(data.copy())
+    svm_data = one_class_svm_anomaly_detection(data.copy())
+
+    isolation_anomalies_count = sum(anomaly_data['Anomaly'] == -1)
+    dbscan_anomalies_count = sum(dbscan_data['DBSCAN_Anomaly'] == -1)
+    svm_anomalies_count = sum(svm_data['SVM_Anomaly'] == -1)
+    
+    analysis_results_data = analysis_results.get('analysis_results', {})
+
+    readme_content = f"""# Data Analysis of {dataset_name}
+{data_info_details}
+{file_details}
+
+## Contents
+- [Missing Values Summary](#missing-values-summary)
+- [Anomalies Detected](#anomalies-detected)
+- [Graphs](#graphs)
+- [Analysis Results](#analysis-results)
+- [Recommnedations](#Recommnedations)
+
+## Missing Values Summary
+The table below shows the count of missing values for each column in the dataset.
+{missing_values_table}
+
+## Anomalies Detected
+Anomalies were detected using three methods. The results are summarized below:
+
+### Isolation Forest
+- Number of anomalies detected: **{isolation_anomalies_count}**
+- Method: Identifies anomalies by isolating data points through recursive partitioning.
+
+### DBSCAN (Density-Based Spatial Clustering of Applications with Noise)
+- Number of anomalies detected: **{dbscan_anomalies_count}**
+- Method: Identifies anomalies as points in low-density regions using density-based clustering.
+
+### One-Class SVM (Support Vector Machine)
+- Number of anomalies detected: **{svm_anomalies_count}**
+- Method: Learns a decision boundary to separate normal data points from anomalies.
+
+## Graphs
+Here are some key visualizations:
+![{"Histogram"}]({"histogram.png"})  
+
+## Analysis Results
+{analysis_results_data}
+
+### Correlation
+![{"Correlation Heatmap"}]({"correlation_matrix.png"})
+
+### Outliers
+Outlier detection results:
+![{"Box Plot of Outliers"}]({"boxplot.png"})
+
+## Recommnedations
+{recommendations}
+
+"""
+
+    def resize_image(image_path, width=500):
+        try:
+            with Image.open(image_path) as img:
+                aspect_ratio = img.height / img.width
+                new_height = int(width * aspect_ratio)
+                img = img.resize((width, new_height))
+                img.save(image_path) 
+        except FileNotFoundError:
+            print(f"Image {image_path} not found, skipping resizing.")
+
+    resize_image("histogram.png")
+    resize_image("correlation_matrix.png")
+    resize_image("boxplot.png")
+    
     with open("README.md", "w") as f:
-        # Report Title and General Overview
-        f.write("# Data Analysis Report\n\n")
-        f.write(f"## Data Overview\n")
-        f.write(f"Loaded data from `{filename}` with **{data.shape[0]} rows** and **{data.shape[1]} columns**. This dataset includes various attributes about the entities being analyzed, which will be examined for trends, correlations, and anomalies.\n\n")
+        f.write(readme_content)
+    
+    print(f"Generated README for {dataset_name}.")
 
-        # Missing Data Summary using tabulate
-        missing = data.isnull().sum().reset_index()
-        missing.columns = ['Column Name', 'Missing Values']
-        f.write("### Missing Values Summary\n")
-        f.write("The table below shows the count of missing values for each column in the dataset.\n")
-        f.write(tabulate(missing, headers='keys', tablefmt='pipe', showindex=False))
-        f.write("\n\n")
-
-        # Anomalies Detected using tabulate
-        anomalies = data['Anomaly'].value_counts().reset_index()
-        anomalies.columns = ['Anomaly Value', 'Count']
-        f.write("### Anomalies Detected\n")
-        f.write(f"Anomalies detected: **{anomalies.get(-1, 0)}** out of **{data.shape[0]}** entries.\n")
-        f.write("Here is the breakdown of anomalies:\n")
-        f.write(tabulate(anomalies, headers='keys', tablefmt='pipe', showindex=False))
-        f.write("\n\n")
-
-        # Correlation Insights using tabulate
-        corr_matrix = data.select_dtypes(include=[np.number]).corr()
-        highly_correlated = corr_matrix[corr_matrix.abs() > 0.8].stack().reset_index()
-        highly_correlated.columns = ['Feature 1', 'Feature 2', 'Correlation']
-        
-        f.write("### High Correlations\n")
-        f.write("We found strong correlations between the following pairs of features in the dataset:\n")
-        f.write(tabulate(highly_correlated, headers='keys', tablefmt='pipe', showindex=False))
-        f.write("\n\n")
-
-        # Analysis Results Section
-        f.write("## Analysis Results\n")
-        f.write("Below are the key findings and insights derived from the data analysis:\n")
-        f.write(analysis_results)
-        f.write("\n\n")
-
-        # Visualizations
-        f.write("## Visualizations\n")
-        f.write("The following charts provide a graphical representation of key trends and insights in the data.\n")
-        for chart in charts:
-            f.write(f"![{chart}]({chart})\n")
-        
-        # Insights and Implications
-        f.write("## Insights and Implications\n")
-        f.write("The analysis reveals various patterns and anomalies, as well as correlations that could indicate significant relationships between certain features. The visualizations help to highlight these trends more clearly, providing actionable insights.\n")
-        f.write("In particular, the strong correlations between certain features suggest that there may be underlying relationships that are important for further analysis. Anomalies detected could point to data collection issues or outliers that deserve closer scrutiny.\n")
-        f.write("\n")
 
 if __name__ == "__main__":
-    # Load data and generate analysis
-    data = load_dataset(filename)
-    data_summary = explore_data(data)
+    
+    if len(sys.argv) != 2:
+        print("Usage: python autolysis.py <dataset.csv>")
+        sys.exit(1)
 
-    # Generate charts
+    filename = sys.argv[1]
+    data = load_dataset(filename)
+
+    explore_data(data)
     generate_correlation_matrix(data)
     generate_histograms(data)
-    generate_box_plots(data)
+    generate_boxplot(data)
 
-    # Anomaly detection
-    data = anomaly_detection(data)
-    data = dbscan_anomaly_detection(data)
-    data = one_class_svm_anomaly_detection(data)
+    data_with_anomalies = anomaly_detection(data)
+    data_with_anomalies = dbscan_anomaly_detection(data_with_anomalies)
+    data_with_anomalies = one_class_svm_anomaly_detection(data_with_anomalies)
+    analysis_results = analyze_data_with_llm(data, filename)
 
-    # Generate analysis using LLM
-    analysis_results = analyze_data_with_llm(str(data_summary))
-
-    # Write narrative and save charts
-    charts = ["correlation_matrix.png", "histogram_average_rating.png", "boxplot_average_rating.png"]
-    write_narrative(analysis_results, charts, data, filename)
-    print("Analysis complete. The results have been written to README.md.")
+    generate_readme(filename, analysis_results, data)
+    print("Analysis complete and README generated.")
